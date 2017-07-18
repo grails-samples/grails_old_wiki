@@ -1,0 +1,688 @@
+= Deployment
+
+== General Hints
+
+Grails should *never* be deployed using the `grails run-app` command as this sets Grails up in "development" mode which has additional overheads. To deploy a Grails application type:
+[source, bash]
+----
+grails war
+----
+
+This will create a Web Application Archive (WAR) file from the app name and version found in the application.properties file. For example `myapp-0.1.war`
+
+Now take this WAR file and install it into your container of choice. See below for container specific installation.
+h2. Memory Considerations
+
+If memory is not a problem on your server then allocate a large amount of memory, such as 512M or more. Also use the server VM option. EG: (-server \-Xms512M \-Xmx512M). Usually it is better to set both min and max heap size to the same in server applications.
+
+However, if you running on a virtual host with limited memory, Grails 1.0 RC1 has been tested on tomcat 6 with both \-Xmx96M and \-Xmx128M, it performed well with both settings. I've heard reports of it running on lesser configurations. See: [Grails Test On Virtual Server] for more information.
+
+If you start running your application and see *java.lang.OutOfMemoryError: PermGen space*, then review your current Xms and Xmx configuration and look to increase these. The error at start up is typically caused when the JVM has less than required memory to run your application. Applications that run quartz tasks etc will for sure require a boost.
+
+You can use jVisualVM (found in java/jdkxxx/bin folder resp. under windows: x:/Programs/Java/jdk..../bin/jvisualvm.exe) to monitor memory consumption and behaviour.
+
+== Platform-as-a-Service (PaaS) Compatibility
+
+|===
+|PaaS|Grails 1.0|Grails 2.x|Grails 3.x
+|Generic VPS
+|*Y*
+|*Y*
+|
+|Jelastic PaaS v4.2
+|
+|*Y*
+|
+|CloudFoundry
+|*Y*
+|
+|
+|Amazon
+|
+|
+|
+|Google
+|
+|
+|
+|===
+
+
+== Container Support Matrix
+
+|===
+|Container | Grails 1.0 | Grails 2.x | Grails 3.x
+|Geronimo 2.0.2
+| see WAS CE
+|
+|
+|#Geronimo 2.1.1
+| *Y*
+|
+|
+|#GlassFish v1 (Sun AS 9.0) and v2 (Sun AS 9.1)
+| *Y*
+|
+|
+|#GlassFish v3 Prelude
+| *Y*
+|
+|
+|#GlassFish v4.1
+|
+|
+|
+|#IBM Integrated Web Application Server for i7.1
+|*Y*
+|
+|
+|#JBoss 4.2
+|*Y*
+|
+|
+|#JBoss 5
+|*Y*
+|
+|
+|#JBoss 6
+| *Y*
+|
+|
+|#Jetty 6.1
+|*Y*
+|
+|
+|#Jetty 8
+|
+|
+|
+|#Jetty 9
+|
+|
+|
+|#JOnAS 5.1
+|*Y*
+|
+|
+|#JOnAS 5.2 and onwards
+|*Y*
+|
+|
+|#Sun App Server 8.2
+|*Y*
+|
+|
+|Oracle AS
+|*Y*
+|
+|
+|Resin 3.2
+|*Y*
+|
+|
+|SpringSource Application Platform 1.0 beta
+|*Y*
+|
+|
+|#Tomcat 5.5
+|*Y*
+|
+|
+|#Tomcat 6.0
+| *Y*
+|
+|
+|#Tomcat 7.0.55
+|
+|*Y*
+|*Y*
+|#Tomcat 8.0.9
+|
+| ?
+|
+|#Weblogic 8.1.2
+| *N*
+|
+|
+|#Weblogic 9.2
+|*Y*
+|
+|
+|Weblogic 10
+|*Y*
+|
+|
+|#Weblogic 11g/12x
+|*Y*
+|
+|
+|#Websphere 6.1
+|*Y*
+|
+|
+|#Websphere Application Server Community Edition 2.0 (WAS CE)
+| *Y*
+|
+|
+|===
+
+== Deployment Container Notes
+
+=== Tomcat
+
+Tomcat deployment is trivial and requires copying the WAR file into the TOMCAT_HOME/webapps folder and restarting the container.
+
+Be aware that on default settings, Grails will attempt to write to the tomcat directory certain files, typically the stacktrace.log and the h2 database.  Your Tomcat directory is likely installed with owner/group of root, while the Tomcat server runs as user tomcat6.  This will cause your application to fail to start with write permission errors.  Either change your Grails production settings so that these files are written elsewhere to directories with correct permissions OR change the owner of the Tomcat directory (for Unix: /var/lib/tomcat6) to tomcat6 (or whatever tomcat user you set up using the TOMCAT6_USER setting).
+
+
+=== JOnAS 5.1
+
+Deploying Grails applications on http://jonas.ow2.org[OW2 JOnAS] has been tested on versions 5.1.x (OSGi).
+
+* Open the JONAS_BASE/conf/classloader-default-filtering.xml file and make it have the following contents:
+
+[source,xml]
+----
+<class-loader-filtering xmlns="http://org.ow2.jonas.lib.loader.mapping">
+  <default-filters>
+    <filter-name>org.apache.commons.digester.*</filter-name>
+    <filter-name>org.springframework.*</filter-name>
+  </default-filters>
+</class-loader-filtering>
+----
+* When you use the g:remoteFunction, g:submitToRemote or other similar methods, you might have the problem that your params seem to all require a URL decoding/escaping. That happens because the Tomcat server embedded into JOnAS uses the ISO-8859-1 character set when decoding the URIs, whereas Grails submits them as UTF-8. To fix this, open the JONAS_BASE/conf/tomcat6-server.xml and JONAS_BASE/conf/tomcat7-server.xml in order to change all the:
+
+[source, xml]
+----
+<Connector ...
+----
+
+declarations with:
+
+[source, xml]
+----
+<Connector URIEncoding="UTF-8" ...
+----
+
+Once you've done these your JOnAS 5.1 server is ready. Just drop your Grails WAR into the JONAS_BASE/deploy directory, no modification is required.
+
+Please note that the usage of the java2-delegation-model options in the jonas-web.xml file are highly discouraged.
+
+=== JOnAS 5.2 and onwards
+
+Deploying Grails applications on http://jonas.ow2.org[OW2 JOnAS] has been tested on versions 5.2.x and the latest 5.3.x milestones (OSGi).
+
+* When you use the g:remoteFunction, g:submitToRemote or other similar methods, you might have the problem that your params seem to all require a URL decoding/escaping. That happens because the Tomcat server embedded into JOnAS uses the ISO-8859-1 character set when decoding the URIs, whereas Grails submits them as UTF-8. To fix this, open the JONAS_BASE/conf/tomcat6-server.xml and JONAS_BASE/conf/tomcat7-server.xml in order to change all the:
+
+[source, xml]
+----
+<Connector ...
+----
+
+declarations with:
+
+[source, xml]
+----
+<Connector URIEncoding="UTF-8" ...
+----
+
+Once you've done that step your JOnAS 5.2+ server is ready for Grails. Just drop your Grails WAR into the JONAS_BASE/deploy directory, no modification is required.
+
+Please note that the usage of the java2-delegation-model options in the jonas-web.xml file are highly discouraged.
+
+=== Geronimo 2.1.1
+
+To deploy a Grails application into Geronimo 2.1.1 (which is bundled with either Tomcat or Jetty) you will have to make a Geronimo plan (${PROJECT_HOME}/web-app/WEB-INF/geronimo-web.xml) which specifies an inverse class loader strategy:
+
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://geronimo.apache.org/xml/ns/j2ee/web-1.1"
+ xmlns:nam="http://geronimo.apache.org/xml/ns/naming-1.1"
+ xmlns:sec="http://geronimo.apache.org/xml/ns/security-1.1"
+ xmlns:sys="http://geronimo.apache.org/xml/ns/deployment-1.1">
+  <sys:environment>
+    <sys:moduleId>
+      <sys:groupId>group_id</sys:groupId>
+      <sys:artifactId>artifact_id</sys:artifactId>
+      <sys:version>1.0</sys:version>
+      <sys:type>war</sys:type>
+    </sys:moduleId>
+    <!-- For Grails to work properly we use the "parent-last" strategy : -->
+    <inverse-classloading/>
+  </sys:environment>
+  <context-root>/YourApplication</context-root>
+</web-app>
+----
+
+This is adequate for deploying to a Jetty based Geronimo application server. However, for deploying to a Tomcat based Geronimo application server, you must also delete *jta.jar* from the WAR file generated by Grails. That's it - you can now drop the WAR into ${GERONIMO_HOME}/deploy
+
+Note: a great article on IBM developerWorks covers the topic of http://www.ibm.com/developerworks/opensource/library/os-ag-grails/[deploying Grails application on Geronimo].
+
+=== GlassFish
+
+To deploy a Grails application into *http://glassfish.dev.java.net[GlassFish] v1* (     Sun Java System Application Server 9.0), *Glassfish v2* (     Sun Java System Application Server 9.1 Update 1 and 2 ) and *GlassFish v3*
+* Take the WAR file and drop it in the *autodeploy* directory of the domain onto which you wish to deploy. For example *$GLASSFISH_HOME/domains/domain1/autodeploy*
+
+Or
+* Invoke asadmin command as: *asadmin deploy myapp-0.1.war*
+\\
+
+Access your application at [http://localhost:8080/myapp-0.1]
+
+To undeploy invoke : *asadmin undeploy myapp-0.1*
+
+=== GlassFish v3 Prelude
+
+With https://glassfish.dev.java.net/downloads/v3-prelude.html[GlassFish v3 Prelude], the user can:
+
+- get the Grails distribution right from the Update Center (command-line, update tool, or web admin)
+- use https://embedded-glassfish.dev.java.net/[GlassFish Embedded] when running *% grails run-app*
+- use the *% grails war --nojars* command to create lightweight archives without the Grails jars (since they are already installed in GlassFish)
+
+Check out this http://blogs.sun.com/alexismp/entry/screencast_from_zero_to_grails[5-minute video] to see this all in action.
+
+For the latest on Groovy/Grails support in http://glassfish.dev.java.net[GlassFish], visit http://wikis.sun.com/display/glassfish/GroovyGrails[Groovy & Grails in GlassFish].
+
+=== IBM Integrated Web Application Server for i7.1
+
+You can deploy a grails app out of the box.
+
+To increase maximum memory size, edit the /www/appserver/lwi/conf/overrides/i5javaopts.javaopt file and add a -Xmx1024m (or more) line.
+
+The jndi DataSource name is jdbc/ProxyDS. GORM can probably only access the *DEFAULT connection ID.
+
+=== Sun App Server 8.2
+
+Follow the same instructions as deployment onto GlassFish above. However, Sun App Server 8.2 has a bug relating to <welcome-file-list> definitions. Essentially it routes all requests for static resources like images to the GSP servlet so a URL like:
+
+http://localhost:8080/amazon-0.1/images/grails_logo.jpg
+
+Goes to:
+
+http://localhost:8080/amazon-0.1/images/grails_logo.jpg/index.gsp
+
+There seem to be known problems with this version of Sun App Server
+and a welcome file list definition.
+
+http://forum.java.sun.com/thread.jspa?threadID=5135956&tstart=135
+
+If you do
+
+[source, bash]
+----
+grails install-templates
+----
+
+And them remove the <welcome-file-list> definition from the
+src/templates/war/web.xml file
+
+And then WAR it up and deploy Grails works fine (except for index.gsp)
+
+You could get around the lack of an index.gsp you can replace it with a JSP or HTML redirect to a controller
+
+=== Websphere 6.1
+
+* Install most recent fix pack (at least 6.1.0.29) that includes [PK68016|http://www-01.ibm.com/support/docview.wss?uid=swg1PK68016]
+
+Server JVM settings:
+
+- In "Application servers > server > Process Definition > Java Virtual Machine" set "Generic JVM arguments" to "-Xverify:none"
+- In "Application servers > server > Process Definition > Java Virtual Machine > Custom Properties", add a custom property
+`name: com.ibm.ws.classloader.getInputStream.enableIOException value: true`
+- In "Application servers > server > Web container > Custom Properties", add a custom property
+`name: com.ibm.ws.webcontainer.invokeFiltersCompatibility value: true`
+
+Installing Grails application:
+
+- Access the WebSphere integrated console typically at a location like: [http://localhost:9060/ibm/console]
+- Select Applications/Install New Application
+- Browse for the WAR file and then enter a context path that matches the name of the WAR. For example if you have a myapp-0.1.war then enter /myapp-0.1 as the context path
+- Keep clicking "Next" and then click "Finish" to complete
+- Go back to Applications/Enterprise Applications select the checkbox next to the app you just installed and click the "Start" button
+- You should now be able to access the application via the port you installed WebSphere's HTTP listener on. For example: [http://localhost:9080/myapp-0.1/]
+
+==== The <g:render> tag causes a java.lang.StackOverflowError when deploying a Grails app version 1.1.1 or later on WebSphere 6.1.
+
+Grails app version 1.1 works fine on WAS 6.1 but something happened with Grails 1.1.1 and beyond that breaks the render tag.
+
+==== I get a org.apache.commons.logging.LogConfigurationException what happened?
+
+When trying to load a WAR file on WAS 6 and selecting "Parent last" as the classloader option, some users report the following error:
+
+[source, bash]
+----
+Caused by: org.apache.commons.logging.LogConfigurationException: The chosen
+LogFactory implementation does not extend LogFactory.
+Please check your configuration...
+----
+
+The following steps are reported to work in solving this problem:
+
+- Delete commons-logging-1.1.jar from the lib directory
+- Add commons-logging-adapters-1.1.jar to the lib directory
+- After adding the application, modify the classloader to "Parent last."
+
+For more information, IBM offers a 20-page PDF document on how to get commons-logging to work with WebSphere. (See also GRAILS-515.)
+
+==== I get an error like 'java.lang.NoSuchMethodError: org.apache.tools.ant.UnknownElement: method setNamespace(Ljava/lang/String;)V not found' what do I do?
+
+WebSphere ships with an old version of ant.jar in $WASHOME/lib
+You will see errors like 'java.lang.NoSuchMethodError: org.apache.tools.ant.UnknownElement: method setNamespace(Ljava/lang/String;)V not found'.
+Workaround: replace the ant.jar with a more recent version of ant (e.g. from GRAILS_HOME/lib).
+
+==== I'm getting a 500 error code when I try to access my application
+
+- Check that you have patched WebSphere with the latest fixpack (6.1.0.11 or later)
+- Set the the property 'com.ibm.ws.webcontainer.invokefilterscompatibility' to 'true' (Servers \-> Application Servers \-> <server> \-> Web Container Settings \-> Web Container \-> Custom Properties)
+- Restart WAS, the 500 should only happen now on the first page, if you append index.gsp to the URL it should work
+- Create a file index.html under the webapp directory with the following content :
+
+[source, html]
+----
+<html>
+  <head>
+    <meta HTTP-EQUIV="REFRESH" content="0; url=index.gsp">
+  </head>
+  <body/>
+</html>
+----
+
+- Install the templates with the command :
+[source, bash]
+----
+grails install-templates
+----
+
+- Modify the <welcome-file-list> section of the file src/templates/war/web.xml with :
+
+[source, xml]
+----
+<welcome-file-list>
+    <welcome-file>index.html</welcome-file>
+</welcome-file-list>
+----
+- Repackage and redeploy your application
+
+=== AS/400, i5/OS, IBM i Websphere
+
+By default, on OS/400, Websphere application server uses the classic JVM. Since version 1.0, grails doesn't work with class JVM, you have to switch your websphere instance to the IBM technology for java VM, with qshell, run the following command:
+/QIBM/ProdData/Websphere/AppServer/V61/edition/bin/enableJvm -jvm std32 -profile profile
+
+=== Websphere Application Server Community Edition 2.0
+
+WAS CE is much like Apache Geronimo. Possible errors during deployment might be connected to java version (try Sun's java 1.5) and/or conflicting libraries.
+
+For informations about deployment plan for Geronimo, see: [http://cwiki.apache.org/GMOxDOC11/geronimo-webxml.html].
+
+For additional informations about changing loading policy see: [http://www-1.ibm.com/support/docview.wss?uid=swg21261287].
+
+Note that deployment at [Rak Minimarket Jakarta|http://www.minimarketrak.com/] WAS CE was not heavily tested so far!
+
+- Create web-app/WEB-INF/geronimo-web.xml similiar to one below:
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://geronimo.apache.org/xml/ns/j2ee/web-1.1"
+ xmlns:nam="http://geronimo.apache.org/xml/ns/naming-1.1"
+ xmlns:sec="http://geronimo.apache.org/xml/ns/security-1.1"
+ xmlns:sys="http://geronimo.apache.org/xml/ns/deployment-1.1">
+  <sys:environment>
+    <sys:moduleId>
+      <sys:groupId>group_id</sys:groupId>
+      <sys:artifactId>artifact_id</sys:artifactId>
+      <sys:version>1.0</sys:version>
+      <sys:type>war</sys:type>
+    </sys:moduleId>
+    <hidden-classes>
+      <filter>org.springframework</filter>
+      <filter>org.apache.cxf</filter>
+      <filter>org.apache.commons</filter>
+      <filter>org.jaxen</filter>
+    </hidden-classes>
+  </sys:environment>
+  <context-root>/YourApplication</context-root>
+</web-app>
+{code}
+----
+
+- Build .war file
+  Execute 'grails war' at your project's folder
+
+- Start WAS CE and login into management console
+
+- Go to Applications->Deploy new
+
+- As 'Archive' choose your .war file
+
+- Click install
+
+=== JBoss 4.2
+
+Deploying onto JBoss 4.2 is trivial, simply start-up JBoss then drop the WAR file into the JBOSS_HOME/server/default/deploy directory (or the relevant profile you want to deploy to). JBoss will automatically deploy the Grails application which will then be accessible via something like: [http://localhost:8080/myapp-0.1]
+
+=== JBoss 5
+
+NOTE: The [jBoss AS plugin|http://grails.org/plugin/jbossas] is now available to help you deploy your application to your jBoss 5 and 6 servers.
+
+Take a look at [this article|http://blog.saddey.net/2010/03/06/how-to-deploy-a-grails-application-to-jboss-5/] on deploying a Grails application to JBoss 5.
+
+- Remove logging libs from grails because they're already supplied by Jboss - BuildConfig.groovy
+
+[source, groovy]
+----
+grails.war.resources = { stagingDir ->
+   for (name in ['log4j', 'slf4j', 'jcl-over-slf4j', 'jul-to-slf4j']) {
+      delete {
+         fileset dir: "$stagingDir/WEB-INF/lib/",
+                 includes: "$name*.jar"
+      }
+   }
+}
+----
+
+- Remove log4j configuration from web.xml, in profit to JBoss config.
+
+Either run
+[source, bash]
+----
+grails install-templates
+----
+
+and edit src/templates/war/web.xml and manually remove the Log4j listener element:
+
+[source, xml]
+----
+<listener>
+   <listener-class>org.codehaus.groovy.grails.plugins.log4j.web.util.Log4jConfigListener</listener-class>
+</listener>
+{code}
+----
+
+or add this code to scripts/_Events.groovy (create the file if it doesn't already exist):
+
+[source, groovy]
+----
+import groovy.xml.DOMBuilder
+import groovy.xml.XmlUtil
+import groovy.xml.dom.DOMCategory
+
+eventCreateWarStart = { warName, stagingDir ->
+
+   def webXmlFile = new File(stagingDir, '/WEB-INF/web.xml')
+   def wxml = DOMBuilder.parse(new StringReader(webXmlFile.text)).documentElement
+
+   String className = 'org.codehaus.groovy.grails.plugins.log4j.web.util.Log4jConfigListener'
+   use (DOMCategory) {
+      def listenerNodes = wxml.'listener'
+      for (n in listenerNodes) {
+         if (n.'listener-class'.text() == className) {
+            wxml.removeChild n
+         }
+      }
+   }
+
+   webXmlFile.withWriter { it << XmlUtil.serialize(wxml) }
+}
+----
+
+- Deactivate some code loading in grails-app embedded hibernate -
+
+If you got this exception
+
+[source, bash]
+----
+Caused by: java.lang.NoSuchMethodException: org.hibernate.validator.ClassValidator.<init>(java.lang.Class, java.util.ResourceBundle, org.hibernate.validator.MessageInterpolator, java.util.Map, org.hibernate.annotations.common.reflection.ReflectionManager)
+at java.lang.Class.getConstructor0(Class.java:2706)
+at java.lang.Class.getDeclaredConstructor(Class.java:1985)
+at org.hibernate.cfg.Configuration.applyHibernateValidatorLegacyConstraintsOnDDL(Configuration.java:1669)
+----
+
+Try to add this in DataSource.groovy
+
+[source, groovy]
+----
+hibernate {
+    validator.apply_to_ddl = false
+    validator.autoregister_listeners = false
+}
+----
+
+=== JBoss 6
+
+NOTE: The http://grails.org/plugin/jbossas[jBoss AS plugin] is now available to help you deploy your application to your jBoss 5 and 6 servers.
+
+If you have trouble deploying to JBoss 6 with the error "Error visiting resource: VFSResourceContext" you can skip scanning of that jar with a jboss-scanning.xml descriptor in the WEB-INF folder, e.g.
+
+[source, xml]
+----
+<?xml version='1.0' encoding='UTF-8' ?>
+<scanning xmlns='urn:jboss:scanning:1.0'>
+   <path name='WEB-INF/lib/grails-datastore-gorm-*.jar'>
+      <include name='org.grails.datastore' />
+   </path>
+</scanning>
+----
+
+You will probably also have classloader isolation issues and these can be fixed by creating web-app/WEB-INF/jboss-classloading.xml with this content:
+
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8" ?>
+<classloading
+   xmlns="urn:jboss:classloading:1.0"
+   domain="your_war_name.war"
+   export-all="NON_EMPTY"
+   import-all="true"
+/>
+----
+
+Unfortunately this second file requires a hard-coded war file name.
+
+=== Resin (3.1.3)
+
+Deploying Grails onto Resin running with Apache as frontend may cause Apache not to pass request handling to Resin for grails-like URLs such as "/controller/action/1".  Apache (and mod_caucho) considers this to be a normal physical directory access because there are no servlet mapping in the web.xml for such URLs.  To fix this problem, simply add "SetHandler caucho-request" to your .htaccess file inside your webapp's document root directory.  This will pass all URLs to caucho for processing.  This can also be done using <Location> or <LocationMatch> in your apache configuration.
+
+=== Oracle AS
+
+There is a great article about how to deploy onto Oracle AS here: [http://www.oracle.com/technetwork/articles/grall-grails-083750.html]
+
+Note if you use a JNDI dataSource you need to allow parent classes to load first
+
+=== Weblogic 8.1.2
+
+The most important thing to remember is that this version only supports servlet spec 2.3 so you need to make sure that the web.xml uses a DTD and not the 2.4 schema. WL also doesn't adhere strictly to the servlet spec and doesn't load listeners before servlets which can cause problems where the  dispatcher cannot run because the application context hasn't been loaded. Have a look at this link for more info [http://www.jdocs.com/spring/1.2.8/org/springframework/web/context/ContextLoaderServlet.html]
+
+=== Weblogic 9.2
+
+Default Grails 1.1 applications fail to deploy on Weblogic 9.2 with the following exception:
+
+[source, bash]
+----
+org.springframework.beans.factory.BeanCreationException: Error creating
+bean with name 'pluginManager' defined in ServletContext resource
+[/WEB-INF/applicationContext.xml]: Invocation of init method failed;
+nested exception is java.lang.NoSuchMethodError: org.apache.tools.ant.
+helper.AntXMLContext.setCurrentTargets(Ljava/utilMap;)
+----
+
+To fix this create web-app/WEB-INF/weblogic.xml similiar to one below with the <prefer-web-inf-classes> element set to true:
+
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+ <weblogic-web-app
+ xmlns="http://www.bea.com/ns/weblogic/90"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.bea.com/ns/weblogic/90
+   http://www.bea.com/ns/weblogic/90/weblogic-web-app.xsd">
+     <container-descriptor>
+         <prefer-web-inf-classes>true</prefer-web-inf-classes>
+      </container-descriptor>
+ </weblogic-web-app>
+----
+
+===  Weblogic 11g/12x
+
+I have found three problems deploying my app to Weblogic.
+
+You must make a WEB-INF/weblogic.xml file with the following minimum content:
+
+[source, xml]
+----
+<?xml version="1.0" encoding="UTF-8"?>
+<wls:weblogic-web-app xmlns:wls="http://xmlns.oracle.com/weblogic/weblogic-web-app" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_2_5.xsd http://xmlns.oracle.com/weblogic/weblogic-web-app http://xmlns.oracle.com/weblogic/weblogic-web-app/1.0/weblogic-web-app.xsd">
+   <wls:weblogic-version>10.3.2</wls:weblogic-version>
+   <wls:context-root>wsc2</wls:context-root>
+   <wls:container-descriptor>
+      <wls:prefer-web-inf-classes>true</wls:prefer-web-inf-classes>
+   </wls:container-descriptor>
+   <wls:session-descriptor>
+      <wls:cookie-name>WSC2SESSIONID</wls:cookie-name>
+   </wls:session-descriptor>
+</wls:weblogic-web-app>
+----
+
+I detail the errors, and [Rak|http://www.minimarketrak.com/] solutions:
+
+==== The server does not like -0.1 context root
+
+To select an apropiate name for your app in the weblogic server write in weblogic.xml:
+
+[source, xml]
+----
+....
+    <wls:context-root>wsc2</wls:context-root>
+....
+----
+
+==== The server cannot find the WEB-INF/lib classes
+
+I noticed this error thanks to this exception: **** ClassNotFoundException: org.hibernate.hql.ast.HqlToken ****
+This error happens with all the packages contained by default in the Weblogic classpath like antlr.jar or hibernate-core.jar. This solution makes Weblogic prefer to look for classes in the WEB-INF/lib jars folder.
+
+Solution:
+
+[source, xml]
+----
+....
+   <wls:container-descriptor>
+      <wls:prefer-web-inf-classes>true</wls:prefer-web-inf-classes>
+   </wls:container-descriptor>
+....
+----
+
+==== The server lost the session redirecting between servlets
+
+This happens when you login in the controller and validates user in .gsp file. For example.
+
+Avoid this error naming the session cookie:
+
+[source, xml]
+----
+....
+   <wls:session-descriptor>
+      <wls:cookie-name>WSC2SESSIONID</wls:cookie-name>
+   </wls:session-descriptor>
+....
+----
